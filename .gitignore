@@ -1,0 +1,38 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data files
+data/raw/*
+data/processed/*
+data/curated/*
+
+# Keep folder structure
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/curated/.gitkeep
+
+# Outputs
+outputs/figures/*
+outputs/tables/*
+outputs/samples/*
+
+# Keep folder structure
+!outputs/figures/.gitkeep
+!outputs/tables/.gitkeep
+!outputs/samples/.gitkeep
+
+# Screenshots
+screenshots/*
+!screenshots/.gitkeep
