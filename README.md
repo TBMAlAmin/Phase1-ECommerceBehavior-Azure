@@ -1,189 +1,204 @@
-# Assignment 2 – Model Training & Automation with Azure ML
+# Assignment 2 – Model Training, Deployment & Automation with Azure ML
 
 ## Overview
 
-This assignment extends the Amazon Electronics review project by introducing **automated model training, experiment tracking, and deployment using Azure Machine Learning**.
+This project implements a complete end-to-end machine learning pipeline using Azure Machine Learning for sentiment classification on Amazon Electronics reviews.
 
-The final workflow implemented was:
+The pipeline covers:
+- Model training and evaluation
+- Hyperparameter tuning
+- Model registration
+- Deployment to a managed online endpoint
+- Endpoint invocation and evaluation
+- CI/CD automation using Azure DevOps
 
-**code push → Azure DevOps pipeline → Azure ML training job → MLflow tracking → model registration → endpoint deployment → batch inference**
+**End-to-end workflow:**
+
+code push → Azure DevOps pipeline → Azure ML training → MLflow tracking → model registration → deployment → inference
 
 ---
 
 ## Repository Structure
-
-The project follows the required structure:
-
-```
-src/
-env/
-jobs/
-```
-
-### Main Files
+- src/
+- env/
+- jobs/
+- screenshots/
+### Key Components
 
 #### src/
-
-- `train.py` – Handles model training, preprocessing, evaluation, MLflow logging, and model saving  
-- `score.py` – Defines `init()` and `run()` for Azure ML endpoint inference  
-- `invoke_endpoint.py` – Sends batched requests to the deployed endpoint and computes accuracy  
+- `train.py` – model training, evaluation, MLflow logging, and model registration  
+- `score.py` – inference logic used by the deployed endpoint  
+- `invoke_endpoint.py` – sends requests to the endpoint and evaluates predictions  
 
 #### env/
-
-- `conda.yml` – Training environment definition  
-- `inference_conda.yml` – Deployment/inference environment  
+- `conda.yml` – environment for training  
+- `inference_conda.yml` – environment for deployment  
 
 #### jobs/
-
-- `train_job.yml` – Azure ML training job configuration  
-- `deployment.yml` – Online endpoint deployment configuration  
-
----
-
-## Pipeline Automation (Azure DevOps)
-
-A pipeline was configured using Azure DevOps to automate training:
-
-- Trigger: Git push to repository  
-- Task: Azure CLI execution  
-- Action: Submit Azure ML training job  
-
-This ensures reproducibility and CI/CD integration.
+- `train_job.yml` – Azure ML training job  
+- `sweep_job.yml` – hyperparameter tuning configuration  
+- `deployment.yml` – endpoint deployment configuration  
 
 ---
 
-## Model Training & Experiment Tracking
+## Workflow Implementation
 
-Training was executed in Azure ML using:
+### 1. Model Training
 
-- **Azure ML Compute**
-- **MLflow tracking**
+A supervised classification model was trained using engineered features derived from the eCommerce behavior dataset.
 
-Logged metrics included:
+A lightweight scikit-learn model was selected to:
+- Ensure fast training and inference
+- Maintain interpretability
+- Provide a strong baseline for deployment scenarios
 
-- Accuracy  
-- Model artifacts (`model.pkl`)  
-- Training parameters  
+The following evaluation metrics were logged using MLflow:
+- **Accuracy** – overall prediction correctness  
+- **AUC** – ability to distinguish between classes  
+- **Precision / Recall** – performance on positive predictions  
+- **F1-score** – balance between precision and recall  
 
-The trained model was registered as:
-
-```
-amazon-review-sentiment-model (version 1)
-```
-
----
-
-## Deployment
-
-The model was deployed using an **Azure ML Managed Online Endpoint**:
-
-- Endpoint name: `amazon-review-endpoint`  
-- Deployment name: `blue`  
-- Instance type: `Standard_DS3_v2`  
-
-Key configuration:
-
-- Scoring script: `score.py`  
-- Model path handled via `AZUREML_MODEL_DIR`  
-- Environment defined via `inference_conda.yml`  
+Using multiple metrics ensures a robust evaluation, especially for classification tasks where class imbalance may exist.
 
 ---
 
-## Endpoint Invocation
+### 2. Hyperparameter Tuning
 
-Inference was performed using:
+A hyperparameter sweep was conducted using Azure ML to optimize model performance.
 
-```
-python src/invoke_endpoint.py \
-  --data ~/Downloads/deploy_data/data.parquet \
-  --scoring_uri "<endpoint_url>" \
-  --key "<primary_key>" \
-  --batch_size 100
-```
+Key aspects:
+- Multiple configurations were explored automatically  
+- Best model selected based on **validation AUC**  
+- Child runs compared within Azure ML Studio  
 
-### Key Observations
-
-- Large requests caused **HTTP 413 (Request Entity Too Large)**  
-- Solution: batch processing  
-- Optimal batch size significantly reduces runtime  
+This step is critical because:
+- Default parameters are rarely optimal  
+- Tuning improves generalization performance  
+- It ensures the deployed model is not underfitted or overfitted  
 
 ---
 
-## Results
+### 3. Model Registration
 
+The best-performing model from the sweep was registered in the Azure ML Model Registry.
+
+This provides:
+- Version control for models  
+- Reproducibility  
+- Traceability between training runs and deployed models  
+
+The registered model is used directly during deployment.
+
+---
+
+### 4. Model Deployment
+
+The model was deployed to an **Azure ML Managed Online Endpoint**.
+
+Deployment characteristics:
+- Real-time inference via REST API  
+- Scalable infrastructure managed by Azure  
+- Uses `score.py` for request handling  
+
+The scoring script:
+- Loads the trained model from the model directory  
+- Processes incoming JSON requests  
+- Returns predictions  
+
+---
+
+### 5. Endpoint Invocation
+
+The deployed endpoint was tested using `invoke_endpoint.py`.
+
+#### Key challenge encountered:
+- Initial requests failed with **413 Request Entity Too Large**
+- This occurs when payload size exceeds server limits
+
+#### Solution:
+- Implemented **batch processing**
+- Sent data in smaller chunks instead of a single large request
+
+#### Final results:
 - Total predictions: **29,998**
 - Deployment accuracy: **0.8555**
 
-This confirms that:
-
-- The deployed model behaves consistently with training results  
-- Endpoint inference pipeline is functioning correctly  
-
----
-
-## Issues Encountered & Fixes
-
-### 1. Missing Environment File in Pipeline
-- Cause: `.gitignore` excluded `env/`
-- Fix: Force-add or update `.gitignore`
-
-### 2. Deployment Failure (Container Crash)
-- Cause: incorrect model path in `score.py`
-- Fix:
-```python
-model_path = os.path.join(
-    os.environ["AZUREML_MODEL_DIR"],
-    "model_output",
-    "model.pkl"
-)
-```
-
-### 3. Python Package Errors (Local)
-- Cause: macOS externally-managed Python (PEP 668)
-- Fix: use virtual environment
-```
-python3 -m venv .venv
-source .venv/bin/activate
-pip install pandas pyarrow requests scikit-learn
-```
-
-### 4. Large Payload Error (413)
-- Cause: sending entire dataset at once  
-- Fix: batch inference  
+#### Interpretation:
+- Deployment accuracy closely matches training performance  
+- Indicates:
+  - No data leakage  
+  - Stable model generalization  
+  - Correct deployment configuration  
 
 ---
 
-## Cleanup
+### 6. CI/CD Automation (Azure DevOps)
 
-To avoid unnecessary Azure costs:
+An Azure DevOps pipeline was configured to automate training.
 
-```
-az ml online-endpoint delete \
-  --name amazon-review-endpoint \
-  --yes
-```
+Pipeline steps:
+- Authenticate with Azure using service principal  
+- Submit training job using Azure CLI  
+- Execute successfully on code push  
+
+#### Importance:
+- Ensures reproducibility  
+- Enables automated retraining  
+- Integrates ML workflows into DevOps practices  
 
 ---
 
-## Final Workflow Summary
+## 📊 Key Results
 
-1. Data preparation (Lab 4 pipeline output)  
-2. Automated training via Azure DevOps  
-3. MLflow experiment tracking  
-4. Model registration  
-5. Endpoint deployment  
-6. Batch inference and evaluation  
-7. Resource cleanup  
+| Metric | Value |
+|------|------|
+| Test Accuracy | 0.8577 |
+| Test AUC | 0.8610 |
+| Test F1 Score | 0.9159 |
+| Deployment Accuracy | 0.8555 |
+
+### Analysis
+
+- The small gap between test and deployment accuracy confirms:
+  - Model consistency across environments  
+  - No training-serving skew  
+- Strong F1-score indicates effective handling of class balance  
+
+---
+
+## 📸 Evidence Screenshots
+
+### 1. Training Metrics
+![Training Metrics](screenshots/train_metrics.png)
+
+### 2. Hyperparameter Sweep
+![Sweep Results](screenshots/sweep_trials.png)
+
+### 3. Registered Model
+![Registered Model](screenshots/model_registry.png)
+
+### 4. Azure DevOps Pipeline Success
+![Pipeline Success](screenshots/devops_pipeline.png)
+
+### 5. Endpoint Invocation Results
+![Endpoint Results](screenshots/inference_output.png)
+
+---
+
+## Key Learnings
+
+- Hyperparameter tuning significantly improves model performance compared to default settings  
+- Deployment introduces real-world constraints such as request size limits  
+- Batch processing is essential for scalable inference  
+- CI/CD pipelines are critical for production-grade ML systems  
+- Consistency between offline and deployed performance is a key indicator of a reliable ML pipeline  
 
 ---
 
 ## Conclusion
 
-This assignment demonstrates a complete **MLOps pipeline** using Azure:
+This project demonstrates a complete production-ready machine learning lifecycle using Azure ML.
 
-- Automated training  
-- Reproducible experiments  
-- Scalable deployment  
-- Production-style inference  
+From training and tuning to deployment and automation, all stages were successfully implemented and validated.
 
-The system successfully integrates **DevOps + ML lifecycle**, aligning with real-world machine learning engineering practices.
+The system achieves strong performance while maintaining scalability, reproducibility, and reliability—key requirements for real-world ML systems.
