@@ -175,7 +175,7 @@ Pipeline steps:
 ![Sweep Results](screenshots/sweep_trials.png)
 
 ### 3. Registered Model
-![Registered Model](screenshots/model_registry.png)
+![Registered Model](screenshots/model_registery.png)
 
 ### 4. Azure DevOps Pipeline Success
 ![Pipeline Success](screenshots/devops_pipeline.png)
