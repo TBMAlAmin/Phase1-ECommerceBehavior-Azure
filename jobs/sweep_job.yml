@@ -1,0 +1,52 @@
+$schema: https://azuremlschemas.azureedge.net/latest/sweepJob.schema.json
+type: sweep
+
+display_name: sweep_review_classifier
+experiment_name: sweep_review_classifier
+description: Hyperparameter sweep for Logistic Regression on merged review features
+
+sampling_algorithm: random
+
+objective:
+  goal: maximize
+  primary_metric: val_auc
+
+limits:
+  max_total_trials: 6
+  max_concurrent_trials: 2
+  timeout: 7200
+
+compute: azureml:cpu-cluster
+
+inputs:
+  train_data:
+    type: uri_folder
+    path: azureml:amazon_review_merged_features_train:1
+  val_data:
+    type: uri_folder
+    path: azureml:amazon_review_merged_features_val:1
+  test_data:
+    type: uri_folder
+    path: azureml:amazon_review_merged_features_test:1
+
+outputs:
+  model_output: {}
+
+trial:
+  code: ../
+  command: >
+    python src/train.py
+    --train_data ${{inputs.train_data}}
+    --val_data ${{inputs.val_data}}
+    --test_data ${{inputs.test_data}}
+    --output ${{outputs.model_output}}
+    --C ${{search_space.C}}
+  environment:
+    image: mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu20.04:latest
+    conda_file: ../env/conda.yml
+
+search_space:
+  C:
+    type: loguniform
+    min_value: 0.001
+    max_value: 10
