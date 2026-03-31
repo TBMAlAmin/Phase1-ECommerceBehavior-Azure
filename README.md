@@ -1,204 +1,385 @@
-# Assignment 2 – Model Training, Deployment & Automation with Azure ML
-
-## Overview
-
-This project implements a complete end-to-end machine learning pipeline using Azure Machine Learning for sentiment classification on Amazon Electronics reviews.
-
-The pipeline covers:
-- Model training and evaluation
-- Hyperparameter tuning
-- Model registration
-- Deployment to a managed online endpoint
-- Endpoint invocation and evaluation
-- CI/CD automation using Azure DevOps
-
-**End-to-end workflow:**
-
-code push → Azure DevOps pipeline → Azure ML training → MLflow tracking → model registration → deployment → inference
+# Assignment 2 – Model Training & Automation with Azure ML
 
 ---
 
-## Repository Structure
-- src/
-- env/
-- jobs/
-- screenshots/
-### Key Components
+## 1. Overview
 
-#### src/
-- `train.py` – model training, evaluation, MLflow logging, and model registration  
-- `score.py` – inference logic used by the deployed endpoint  
-- `invoke_endpoint.py` – sends requests to the endpoint and evaluates predictions  
+This assignment extends the Amazon Electronics review pipeline into a complete **end-to-end MLOps workflow** using Azure Machine Learning and Azure DevOps.
 
-#### env/
-- `conda.yml` – environment for training  
-- `inference_conda.yml` – environment for deployment  
+The implemented system automates the lifecycle:
 
-#### jobs/
-- `train_job.yml` – Azure ML training job  
-- `sweep_job.yml` – hyperparameter tuning configuration  
-- `deployment.yml` – endpoint deployment configuration  
+**Code → Training → Experiment Tracking → Hyperparameter Tuning → Model Registration → Deployment → Inference**
+
+Unlike Lab 4 (feature engineering), this assignment focuses on **model lifecycle management and operationalization**, which are core aspects of production machine learning systems.
 
 ---
 
-## Workflow Implementation
+## 2. Dataset & Data Assets
 
-### 1. Model Training
+The model uses **Azure ML Data Assets** generated from the Lab 4 pipeline:
 
-A supervised classification model was trained using engineered features derived from the eCommerce behavior dataset.
+- `amazon_review_merged_features_train`
+- `amazon_review_merged_features_val`
+- `amazon_review_merged_features_test`
+- `amazon_review_merged_features_deploy`
 
-A lightweight scikit-learn model was selected to:
-- Ensure fast training and inference
-- Maintain interpretability
-- Provide a strong baseline for deployment scenarios
+### Dataset Split
 
-The following evaluation metrics were logged using MLflow:
-- **Accuracy** – overall prediction correctness  
-- **AUC** – ability to distinguish between classes  
-- **Precision / Recall** – performance on positive predictions  
-- **F1-score** – balance between precision and recall  
+- Train (60%) → model learning  
+- Validation (15%) → hyperparameter tuning  
+- Test (15%) → offline evaluation  
+- Deployment (10%) → simulate production inference  
 
-Using multiple metrics ensures a robust evaluation, especially for classification tasks where class imbalance may exist.
+### Why this design matters
 
----
+Using registered data assets ensures:
 
-### 2. Hyperparameter Tuning
+- reproducibility (same dataset version always used)
+- traceability (clear lineage from feature pipeline → training → model)
+- consistency between training and deployment  
 
-A hyperparameter sweep was conducted using Azure ML to optimize model performance.
-
-Key aspects:
-- Multiple configurations were explored automatically  
-- Best model selected based on **validation AUC**  
-- Child runs compared within Azure ML Studio  
-
-This step is critical because:
-- Default parameters are rarely optimal  
-- Tuning improves generalization performance  
-- It ensures the deployed model is not underfitted or overfitted  
+This reflects real-world MLOps practices where raw files are never directly used.
 
 ---
 
-### 3. Model Registration
+## 3. Feature Engineering Strategy
 
-The best-performing model from the sweep was registered in the Azure ML Model Registry.
+Feature engineering was **not performed in this assignment**, but reused from Lab 4.
 
-This provides:
-- Version control for models  
-- Reproducibility  
-- Traceability between training runs and deployed models  
+The merged dataset contains:
 
-The registered model is used directly during deployment.
+- SBERT embeddings → semantic understanding  
+- TF-IDF vectors → lexical frequency patterns  
+- Sentiment scores → polarity signals  
+- Length features → structural information  
 
----
+### Why this is correct
 
-### 4. Model Deployment
+Separating feature engineering and training:
 
-The model was deployed to an **Azure ML Managed Online Endpoint**.
+- avoids recomputation inconsistencies  
+- improves pipeline modularity  
+- ensures deployment uses identical feature definitions  
 
-Deployment characteristics:
-- Real-time inference via REST API  
-- Scalable infrastructure managed by Azure  
-- Uses `score.py` for request handling  
-
-The scoring script:
-- Loads the trained model from the model directory  
-- Processes incoming JSON requests  
-- Returns predictions  
+This is a fundamental principle in production ML systems.
 
 ---
 
-### 5. Endpoint Invocation
+## 4. Label Definition
 
-The deployed endpoint was tested using `invoke_endpoint.py`.
+The original rating (`overall`) was converted into binary classification:
 
-#### Key challenge encountered:
-- Initial requests failed with **413 Request Entity Too Large**
-- This occurs when payload size exceeds server limits
+- `overall ≥ 4 → 1 (positive)`  
+- `overall < 4 → 0 (negative)`
 
-#### Solution:
-- Implemented **batch processing**
-- Sent data in smaller chunks instead of a single large request
+### Justification
 
-#### Final results:
-- Total predictions: **29,998**
-- Deployment accuracy: **0.8555**
-
-#### Interpretation:
-- Deployment accuracy closely matches training performance  
-- Indicates:
-  - No data leakage  
-  - Stable model generalization  
-  - Correct deployment configuration  
+This simplifies the task into sentiment classification and aligns with standard supervised learning setups.
 
 ---
 
-### 6. CI/CD Automation (Azure DevOps)
+## 5. Model Selection
 
-An Azure DevOps pipeline was configured to automate training.
+Model used: **Logistic Regression**
 
-Pipeline steps:
-- Authenticate with Azure using service principal  
-- Submit training job using Azure CLI  
-- Execute successfully on code push  
+### Justification
 
-#### Importance:
-- Ensures reproducibility  
-- Enables automated retraining  
-- Integrates ML workflows into DevOps practices  
+- Fast training → suitable for CI/CD pipelines  
+- Handles high-dimensional features (TF-IDF + embeddings)  
+- Stable and interpretable  
+- Low compute cost  
 
----
+### Insight
 
-## 📊 Key Results
-
-| Metric | Value |
-|------|------|
-| Test Accuracy | 0.8577 |
-| Test AUC | 0.8610 |
-| Test F1 Score | 0.9159 |
-| Deployment Accuracy | 0.8555 |
-
-### Analysis
-
-- The small gap between test and deployment accuracy confirms:
-  - Model consistency across environments  
-  - No training-serving skew  
-- Strong F1-score indicates effective handling of class balance  
+In MLOps pipelines, **simplicity and reliability are often preferred over complexity**, especially when models are retrained frequently.
 
 ---
 
-## 📸 Evidence Screenshots
+## 6. Training Pipeline
 
-### 1. Training Metrics
-![Training Metrics](screenshots/train_metrics.png)
+The training workflow:
 
-### 2. Hyperparameter Sweep
-![Sweep Results](screenshots/sweep_trials.png)
+1. Load Azure ML datasets  
+2. Generate labels  
+3. Construct feature matrix  
+4. Train model  
+5. Evaluate on all splits  
+6. Log metrics with MLflow  
+7. Save model (`model.pkl`)  
 
-### 3. Registered Model
-![Registered Model](screenshots/model_registery.png)
+### Metrics Logged
 
-### 4. Azure DevOps Pipeline Success
-![Pipeline Success](screenshots/devops_pipeline.png)
+- Accuracy  
+- AUC  
+- Precision  
+- Recall  
+- F1 Score  
 
-### 5. Endpoint Invocation Results
-![Endpoint Results](screenshots/inference_output.png)
+### Why multiple metrics matter
+
+Different metrics capture different behaviors:
+
+- Accuracy → overall correctness  
+- AUC → ranking quality  
+- Precision/Recall → class-specific performance  
+- F1 → balance of precision and recall  
+
+This provides a complete evaluation rather than relying on a single metric.
 
 ---
 
-## Key Learnings
+## 7. Training Results
 
-- Hyperparameter tuning significantly improves model performance compared to default settings  
-- Deployment introduces real-world constraints such as request size limits  
-- Batch processing is essential for scalable inference  
-- CI/CD pipelines are critical for production-grade ML systems  
-- Consistency between offline and deployed performance is a key indicator of a reliable ML pipeline  
+- Test Accuracy: **0.8578**  
+- Test AUC: **0.8610**  
+- Test F1: **0.9159**  
+
+### Interpretation
+
+- Similar performance across splits → good generalization  
+- No strong overfitting detected  
+- Model is stable and reliable  
 
 ---
 
-## Conclusion
+## 8. Hyperparameter Tuning (Sweep Job)
 
-This project demonstrates a complete production-ready machine learning lifecycle using Azure ML.
+A sweep job was used to optimize performance.
 
-From training and tuning to deployment and automation, all stages were successfully implemented and validated.
+### Objective
 
-The system achieves strong performance while maintaining scalability, reproducibility, and reliability—key requirements for real-world ML systems.
+Maximize **validation AUC**
+
+### Best Result
+
+- Best AUC: **0.85488**  
+- Best C ≈ **3.7**
+
+### Why validation is used
+
+Validation data is used for tuning because:
+
+- it prevents overfitting to training data  
+- it preserves the integrity of the test set  
+
+### Key Insight
+
+Sweep jobs automate experimentation and are essential for scalable ML systems.
+
+---
+
+## 9. Model Registration
+
+Final model registered as:
+
+- `amazon-review-sentiment-model` (Version 1)
+
+### Importance
+
+- Enables version control  
+- Links model to training experiment  
+- Provides deployment-ready artifact  
+
+---
+
+## 10. CI/CD Automation (Azure DevOps)
+
+Pipeline automates training using:
+
+- `azure-pipelines.yml`
+
+### Pipeline Steps
+
+1. Checkout repository  
+2. Authenticate Azure  
+3. Submit training job  
+4. Stream logs  
+
+### Why this is important
+
+- eliminates manual execution  
+- ensures repeatability  
+- integrates ML into software engineering workflows  
+
+This is a key component of MLOps.
+
+---
+
+## 11. Deployment
+
+Model deployed as a **Managed Online Endpoint**:
+
+- Endpoint: `amazon-review-endpoint`  
+- Deployment: `blue`  
+
+### Issue Encountered
+
+Model loading failed initially due to incorrect path.
+
+### Fix
+
+Correct path:
+
+```
+AZUREML_MODEL_DIR/model_output/model.pkl
+```
+
+### Insight
+
+Deployment failures are often due to environment or path mismatches, not model logic.
+
+---
+
+## 12. Endpoint Invocation
+
+Deployment dataset used for inference.
+
+### Initial Issue
+
+- HTTP 413 (payload too large)
+
+### Solution
+
+- Implemented batch inference  
+
+### Results
+
+- Predictions: **29998**  
+- Accuracy: **0.85549**
+
+### Interpretation
+
+- Deployment ≈ test performance  
+- No training-serving skew  
+- System behaves correctly in production-like conditions  
+
+---
+
+## 13. Feature Experiments (Understanding)
+
+Different feature combinations were conceptually compared:
+
+- SBERT → semantic meaning  
+- TF-IDF → lexical patterns  
+- Combined → best performance  
+
+### Insight
+
+Different feature types capture different aspects of data, and combining them improves performance.
+
+---
+
+## 14. Monitoring (Conceptual)
+
+Azure ML supports:
+
+- latency tracking  
+- request monitoring  
+- failure rates  
+
+### Importance
+
+Monitoring is required to detect:
+
+- data drift  
+- performance degradation  
+- system failures  
+
+---
+
+## 15. Cost Management
+
+Endpoint deleted after testing to avoid unnecessary compute usage.
+
+---
+
+## 16. Final Results Summary
+
+### Offline
+
+- Accuracy: **0.8578**  
+- AUC: **0.8610**
+
+### Deployment
+
+- Accuracy: **0.85549**
+
+### Conclusion
+
+Strong alignment between offline and deployed results indicates:
+
+- correct pipeline implementation  
+- stable model behavior  
+- consistent feature handling  
+
+---
+
+## 17. Evidence Screenshots
+
+### Training Metrics
+![Training](screenshots/train_metrics.png)
+
+### Sweep Results
+![Sweep](screenshots/sweep_trials.png)
+
+### Model Registry
+![Model](screenshots/model_registery.png)
+
+### DevOps Pipeline
+![Pipeline](screenshots/devops_pipeline.png)
+
+### Endpoint Output
+![Inference](screenshots/inference_output.png)
+
+---
+
+## 18. Key Learnings
+
+- Feature engineering should be separated from training  
+- Simple models can be highly effective in pipelines  
+- MLflow enables reproducibility  
+- Validation and test sets must serve different roles  
+- Deployment introduces real-world constraints  
+- CI/CD is essential in MLOps  
+
+---
+
+## 19. Bonus Question
+
+### What is being done incorrectly?
+
+The **test set is indirectly reused during development**, which violates proper ML evaluation principles.
+
+### Why this is incorrect
+
+- Test set should only be used once  
+- Observing it multiple times introduces bias  
+
+### Correct approach
+
+- Use validation for tuning  
+- Keep test untouched until final evaluation  
+- Use deployment data for real-world simulation  
+
+---
+
+## 20. Conclusion
+
+This assignment successfully demonstrates a full MLOps workflow:
+
+- Data versioning  
+- Training  
+- Experiment tracking  
+- Hyperparameter tuning  
+- Automation  
+- Deployment  
+- Inference  
+
+The final system is:
+
+- reproducible  
+- scalable  
+- automated  
+- production-ready  
+
+---
