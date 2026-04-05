@@ -36,3 +36,9 @@ outputs/samples/*
 # Screenshots
 screenshots/*
 !screenshots/.gitkeep
+.venv/
+phase2/data/*.csv
+phase2/data/*.txt
+phase2/models/*.joblib
+__pycache__/
+*.pyc
