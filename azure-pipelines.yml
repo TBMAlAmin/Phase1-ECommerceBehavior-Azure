@@ -1,0 +1,41 @@
+trigger:
+  branches:
+    include:
+      - phase2-modeling-deployment
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.11'
+    displayName: 'Use Python 3.11'
+
+  - script: |
+      python -m pip install --upgrade pip
+      pip install pandas scikit-learn joblib pyarrow
+    displayName: 'Install dependencies'
+
+  - script: |
+      python phase2/src/train_random_forest_save.py \
+        --input_file phase2/data/session_dataset_safe.csv \
+        --model_dir phase2/models \
+        --metrics_dir phase2/metrics
+    displayName: 'Train Random Forest and save artifacts'
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      PathtoPublish: 'phase2/models'
+      ArtifactName: 'phase2-models'
+      publishLocation: 'Container'
+    displayName: 'Publish model artifacts'
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      PathtoPublish: 'phase2/metrics'
+      ArtifactName: 'phase2-metrics'
+      publishLocation: 'Container'
+    displayName: 'Publish metrics artifacts'

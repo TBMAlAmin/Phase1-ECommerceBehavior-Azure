@@ -42,3 +42,7 @@ phase2/data/*.txt
 phase2/models/*.joblib
 __pycache__/
 *.pyc
+phase2/api/__pycache__/
+phase2/data/processed_2019_oct.csv
+phase2/data/processed_2019_oct_sample_200k.csv
+phase2/data/session_dataset.csv
