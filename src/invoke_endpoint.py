@@ -5,7 +5,7 @@ from sklearn.metrics import accuracy_score, f1_score
 
 # endpoint details
 ENDPOINT_URL = "https://session-endpoint.qatarcentral.inference.ml.azure.com/score"
-API_KEY = "3SwAnrwYsLJm32U1dkFwSzir15mvSEP2uCjXYdd9FrPAeNH5TtSKJQQJ99CDAAAAAAAAAAAAINFRAZMLlF7T"
+API_KEY = "ENDPOINT_API_KEY", "your-api-key-here"
 
 headers = {
     "Content-Type": "application/json",
