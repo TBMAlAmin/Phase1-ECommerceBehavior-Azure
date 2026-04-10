@@ -1,19 +1,17 @@
 $schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
 type: command
 
-display_name: session_purchase_training
+display_name: session_baseline_training
 experiment_name: session_purchase_experiment
 
 code: ../src
 
 command: >-
-  python train.py
+  python train_baseline.py
   --train_data ${{inputs.train_data}}
   --val_data ${{inputs.val_data}}
   --test_data ${{inputs.test_data}}
   --output ${{outputs.model_output}}
-  --n_estimators 100
-  --max_depth 15
 
 inputs:
   train_data:

@@ -1,0 +1,20 @@
+Loading dataset...
+Training Random Forest...
+
+Classification report:
+              precision    recall  f1-score   support
+
+           0     0.9916    0.6477    0.7836      9346
+           1     0.0416    0.7371    0.0788       194
+
+    accuracy                         0.6495      9540
+   macro avg     0.5166    0.6924    0.4312      9540
+weighted avg     0.9723    0.6495    0.7692      9540
+
+
+Confusion matrix:
+[[6053 3293]
+ [  51  143]]
+
+ROC-AUC:
+0.7547

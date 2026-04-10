@@ -1,0 +1,20 @@
+Loading dataset...
+Training logistic regression baseline...
+
+Classification report:
+              precision    recall  f1-score   support
+
+           0     0.9950    0.3848    0.5549      9346
+           1     0.0297    0.9072    0.0575       194
+
+    accuracy                         0.3954      9540
+   macro avg     0.5124    0.6460    0.3062      9540
+weighted avg     0.9754    0.3954    0.5448      9540
+
+
+Confusion matrix:
+[[3596 5750]
+ [  18  176]]
+
+ROC-AUC:
+0.6399

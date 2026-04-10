@@ -1,76 +1,59 @@
-import json
 import os
+import json
 import joblib
 import numpy as np
 import pandas as pd
+
 
 model = None
 
 
 def init():
     global model
-
+    # look for model.pkl inside the model directory
     model_dir = os.getenv("AZUREML_MODEL_DIR")
-    model_path = os.path.join(model_dir, "model_output", "model.pkl")
-
-    model = joblib.load(model_path)
-
-
-def _prepare_features(df: pd.DataFrame) -> pd.DataFrame:
-    exclude = {"asin", "reviewerID", "overall", "label"}
-
-    numeric_cols = [
-        c for c in df.columns
-        if c not in exclude and pd.api.types.is_numeric_dtype(df[c])
-    ]
-
-    preferred_small_features = {
-        "review_length",
-        "word_count",
-        "char_count",
-        "sentiment",
-        "sentiment_score",
-        "polarity",
-        "subjectivity",
-    }
-
-    compact_cols = []
-    for c in numeric_cols:
-        if c.startswith("sbert_") or c in preferred_small_features:
-            compact_cols.append(c)
-
-    if not compact_cols:
-        compact_cols = [c for c in numeric_cols if not c.startswith("tfidf_")]
-
-    X = df[compact_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0).astype(np.float32)
-    return X
+    print(f"Model dir: {model_dir}")
+    print(f"Files in model dir: {os.listdir(model_dir)}")
+    
+    # search for model.pkl recursively
+    for root, dirs, files in os.walk(model_dir):
+        for file in files:
+            if file == "model.pkl":
+                model_path = os.path.join(root, file)
+                print(f"Loading model from: {model_path}")
+                model = joblib.load(model_path)
+                print("Model loaded successfully")
+                return
+    
+    raise FileNotFoundError("model.pkl not found in AZUREML_MODEL_DIR")
 
 
 def run(raw_data):
     try:
-        if isinstance(raw_data, str):
-            data = json.loads(raw_data)
-        else:
-            data = raw_data
+        data = json.loads(raw_data)
+        df = pd.DataFrame(data["data"])
 
-        if isinstance(data, dict) and "data" in data:
-            df = pd.DataFrame(data["data"])
-        else:
-            df = pd.DataFrame(data)
+        # encode first_event_type same as training
+        event_type_map = {"view": 0, "cart": 1, "purchase": 2}
+        df["first_event_type"] = df["first_event_type"].map(event_type_map).fillna(0)
 
-        X = _prepare_features(df)
+        feature_cols = [
+            "first_event_type",
+            "first_hour",
+            "first_dayofweek",
+            "first_price",
+            "brand_missing",
+            "category_missing"
+        ]
 
-        predictions = model.predict(X).tolist()
+        X = df[feature_cols].fillna(0)
+        preds = model.predict(X)
+        probs = model.predict_proba(X)[:, 1]
 
-        if hasattr(model, "predict_proba"):
-            probabilities = model.predict_proba(X)[:, 1].tolist()
-        else:
-            probabilities = None
-
-        return {
-            "predictions": predictions,
-            "probabilities": probabilities
-        }
+        return json.dumps({
+            "predictions": preds.tolist(),
+            "probabilities": probs.tolist()
+        })
 
     except Exception as e:
-        return {"error": str(e)}
+        return json.dumps({"error": str(e)})

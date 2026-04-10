@@ -5,39 +5,30 @@ import joblib
 import mlflow
 import azureml.mlflow
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score, f1_score
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train_data",   type=str, required=True)
-    parser.add_argument("--val_data",     type=str, required=True)
-    parser.add_argument("--test_data",    type=str, required=True)
-    parser.add_argument("--output",       type=str, required=True)
-    parser.add_argument("--n_estimators", type=int, default=100)
-    parser.add_argument("--max_depth",    type=int, default=10)
+    parser.add_argument("--train_data", type=str, required=True)
+    parser.add_argument("--val_data",   type=str, required=True)
+    parser.add_argument("--test_data",  type=str, required=True)
+    parser.add_argument("--output",     type=str, required=True)
     return parser.parse_args()
 
 
 def load_data(path):
-    # handle both folder (parquet) and direct file (csv)
     if os.path.isdir(path):
         for f in os.listdir(path):
-            if f.endswith(".parquet"):
-                return pd.read_parquet(os.path.join(path, f))
             if f.endswith(".csv"):
                 return pd.read_csv(os.path.join(path, f))
-    if path.endswith(".parquet"):
-        return pd.read_parquet(path)
     return pd.read_csv(path)
 
 
 def prepare(df):
     df = df.copy()
-
-    # encode text column into numbers
     le = LabelEncoder()
     df["first_event_type"] = le.fit_transform(df["first_event_type"].astype(str))
 
@@ -74,49 +65,39 @@ def main():
     start_time = time.time()
     mlflow.start_run()
 
-    # load all three splits
     print("Loading data...")
     train_df = load_data(args.train_data)
     val_df   = load_data(args.val_data)
     test_df  = load_data(args.test_data)
 
-    # prepare features and labels
     print("Preparing features...")
     X_train, y_train = prepare(train_df)
     X_val,   y_val   = prepare(val_df)
     X_test,  y_test  = prepare(test_df)
 
-    # train model
-    print("Training model...")
-    model = RandomForestClassifier(
-        n_estimators=args.n_estimators,
-        max_depth=args.max_depth,
+    print("Training baseline Logistic Regression...")
+    model = LogisticRegression(
+        max_iter=1000,
         class_weight="balanced",
         random_state=42
     )
     model.fit(X_train, y_train)
 
-    # log parameters
-    mlflow.log_param("model_type",   "RandomForestClassifier")
-    mlflow.log_param("n_estimators", args.n_estimators)
-    mlflow.log_param("max_depth",    args.max_depth)
+    mlflow.log_param("model_type", "LogisticRegression_baseline")
+    mlflow.log_param("max_iter",   1000)
 
-    # evaluate on all splits
     print("Evaluating...")
     evaluate(model, X_train, y_train, "train")
     evaluate(model, X_val,   y_val,   "val")
     evaluate(model, X_test,  y_test,  "test")
 
-    # save model
     print("Saving model...")
     os.makedirs(args.output, exist_ok=True)
     model_path = os.path.join(args.output, "model.pkl")
     joblib.dump(model, model_path)
     mlflow.log_artifact(model_path)
 
-    # log total runtime
     mlflow.log_metric("training_runtime_seconds", time.time() - start_time)
-
     mlflow.end_run()
     print("Done!")
 
