@@ -1,19 +1,15 @@
-# Phase 2 — Modeling, Validation, and Deployment
+# Phase 2: Session Purchase Prediction – Modeling, Deployment & DevOps
 
-## Overview
-This phase focuses on developing, validating, and deploying a machine learning model to predict whether a user session results in a purchase. The system builds on the Phase 1 data pipeline and ensures consistency between training and production.
+## 1. Overview
+This phase extends the analytics pipeline by building, deploying, and automating a machine learning model to predict whether a user session will result in a purchase.
 
-## Problem Definition
-This is a binary classification task:
-- Input: Early-session features from user activity
-- Output: Purchase (1) or No Purchase (0)
+The system follows a complete MLOps workflow:
+Data → Feature Engineering → Model Training → Evaluation → Deployment → DevOps Automation
 
-## Data and Features
-Dataset:
-- Source: processed_2019_oct.csv (Phase 1 output)
-- Development: processed_2019_oct_sample_200k.csv
+---
 
-Leakage-safe features (only first event used):
+## 2. Objective
+Predict session-level purchase probability using early session signals:
 - first_event_type
 - first_hour
 - first_dayofweek
@@ -21,88 +17,121 @@ Leakage-safe features (only first event used):
 - brand_missing
 - category_missing
 
-## Model Development
-Baseline:
-- Logistic Regression
+---
 
-Improved Model:
-- Random Forest
+## 3. Dataset
+Input dataset:
+- phase2/data/session_dataset_safe.csv
 
-Reproducibility:
-- Fixed random_state=42
-- Train/test split (80/20, stratified)
+---
 
-## Model Validation
-Metrics used:
-- ROC-AUC (primary)
-- Precision, Recall, F1-score
+## 4. Model Development
+Model:
+- Random Forest Classifier (scikit-learn)
 
-Results:
-- Logistic Regression ROC-AUC: 0.6399
-- Random Forest ROC-AUC: 0.7547
+Training script:
+- src/train.py
 
-Analysis:
-- Dataset is highly imbalanced (~2% positive)
-- Accuracy is misleading, ROC-AUC preferred
-- Random Forest performs significantly better
-- Data was split into training and testing sets using an 80/20 stratified split with random_state=42 to ensure reproducibility.
+Process:
+- Load dataset
+- Train model
+- Evaluate performance
+- Save model
 
-## Model Selection
-Random Forest selected due to:
-- Higher ROC-AUC
-- Better handling of non-linear patterns
+---
 
-## Model Versioning
-- Model: rf_model_latest.joblib
-- Metadata: phase2/models/model_metadata.txt
+## 5. Experiment Tracking (Azure ML)
+Training executed using Azure Machine Learning.
 
-Ensures traceability between:
-data → features → model → deployment
+Logged metrics:
+- Precision
+- Recall
+- F1 Score
+- ROC AUC
+- Training Time
 
-## Deployment
-Architecture:
-Request → API → Feature mapping → Model → Prediction
+---
 
-Deployment:
-- FastAPI application
-- Hosted on Azure VM
-- Real-time inference using uvicorn
+## 6. Model Registration
+Model registered in Azure ML:
+- Name: phase2-rf-model
+- Version: 1
 
-Endpoint:
-http://20.173.41.159:8000/predict
+---
 
-## API Example
-Request:
-{
+## 7. API Deployment
+FastAPI endpoint:
+
+http://<VM_PUBLIC_IP>:8000/predict
+
+Example request:
+curl -X POST "http://<VM_PUBLIC_IP>:8000/predict" \
+-H "Content-Type: application/json" \
+-d '{
   "first_event_type": "view",
   "first_hour": 5,
   "first_dayofweek": 1,
   "first_price": 31.66,
   "brand_missing": 0,
   "category_missing": 1
-}
+}'
 
-Response:
-{
-  "prediction": 0,
-  "purchase_probability": 0.105887
-}
+---
 
-## Deployment Validation
-- Successful API calls via curl
-- Swagger UI (/docs) accessible
-- Consistent predictions between local and deployed model
+## 8. DevOps Automation
+Azure DevOps pipeline:
+- Submits Azure ML training job
+- Runs via YAML configuration
+- Uses Azure CLI
+- Executes on Azure Pipelines agent
 
-## Limitations
-- Strong class imbalance
-- Model trained on sample data
-- Limited feature set
-- No threshold tuning applied
+---
 
-## Conclusion
-This phase delivers a complete ML pipeline:
-- Model development and validation
-- Leakage-safe feature engineering
-- Model comparison and selection
-- Real-time deployment on Azure
-- Successful deployment validation
+## 9. Validation
+System validated through:
+- Successful API responses
+- Azure ML training job completion
+- DevOps pipeline execution
+
+---
+
+## 10. Screenshots
+
+### API Request (curl)
+![API Curl](screenshots/1_api_curl.png)
+
+### API Documentation (Swagger)
+![Swagger UI](screenshots/2_api_swagger.png)
+
+### API Server Logs
+![API Logs](screenshots/3_api_logs.png)
+
+### Azure ML Training Job
+![Azure Job](screenshots/4_azure_job_completed.png)
+
+### DevOps Pipeline
+![DevOps Pipeline](screenshots/5_devops_pipeline.png)
+
+---
+
+## 11. Repository Structure
+phase2/
+├── api/
+├── data/
+├── models/
+├── src/
+
+env/
+jobs/
+azure-pipelines.yml
+README.md
+
+---
+
+## 12. Conclusion
+This phase demonstrates a complete end-to-end MLOps pipeline including:
+- Model training in Azure ML
+- Deployment via FastAPI
+- Automation using Azure DevOps
+
+The system is reproducible, scalable, and aligned with industry MLOps practices.
