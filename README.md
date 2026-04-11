@@ -1,279 +1,187 @@
-# E-Commerce Customer Behavior Analytics Pipeline (Azure)
+# Phase 2: Session Purchase Prediction – Modeling, Deployment & DevOps
 
-## Project Overview
-This project implements an **end-to-end data engineering pipeline on Microsoft Azure** to analyze how users interact with an e-commerce platform. The objective is to ingest raw behavioral logs, process them using distributed data processing, and generate insights about customer activity patterns.
+## Overview
+This phase builds a machine learning pipeline to predict whether a user session 
+will result in a purchase. It extends the Phase 1 data pipeline with model 
+training, validation, deployment, and CI automation using Azure ML and Azure DevOps.
 
-The pipeline integrates **Azure Data Lake Storage Gen2, Azure Data Factory, and Azure Databricks (Apache Spark)** to transform raw event data into structured analytical outputs. The workflow demonstrates how modern cloud tools can be used to build scalable behavioral analytics pipelines.
+The full workflow is:
+Data → Feature Engineering → Model Training → Validation → Deployment → DevOps
 
-Key analytical goals of the project include:
+---
 
-- Identifying **peak user activity times**
-- Analyzing **customer interaction sequences**
-- Performing **basic data quality validation**
-- Exploring relationships between **product price and user activity timing**
-
-The outputs of this pipeline could later support **recommendation systems, demand forecasting, or customer behavior modeling**.
+## Problem Statement
+Given early signals from a user session, predict whether the session will end 
+in a purchase (binary classification: 1 = purchase, 0 = no purchase).
 
 ---
 
 ## Dataset
+- Source: E-Commerce Behavior Dataset (Kaggle, Oct 2019)
+- File: `data/session_dataset_safe.csv`
+- Each row represents one user session with early session signals as features
 
-**Source:** Kaggle – E-Commerce Behavior Dataset  
-**File Used:** `2019-Oct.csv`
+### Features Used
+| Feature         | Description                                        |
+|-----------------|----------------------------------------------------|
+|first_event_type | First action in the session (view, cart, purchase) |
+|first_hour       | Hour of day when session started                   |
+|first_dayofweek  | Day of week when session started                   |
+|first_price      | Price of first product viewed                      |
+|brand_missing    | Whether brand info was missing (1/0)               |
+|category_missing | Whether category info was missing (1/0)            |
 
-The dataset contains logs of customer activity on an online store. Each row represents a user interaction event such as viewing a product, adding it to a cart, or purchasing it.
-
-### Key Attributes
-
-| Column | Description |
-|------|------|
-| event_time | Timestamp of the event |
-| event_type | Interaction type (view, cart, purchase) |
-| product_id | Product identifier |
-| category_id | Category identifier |
-| category_code | Product category name |
-| brand | Product brand |
-| price | Product price |
-| user_id | Unique user identifier |
-| user_session | Session identifier |
-
-The dataset is treated as a **monthly snapshot of user activity**, which simplifies the pipeline while still allowing meaningful behavioral analysis.
+### Label
+- `label = 1` if session resulted in a purchase
+- `label = 0` if session did not result in a purchase
 
 ---
 
-## System Architecture
+## Dataset Splits
+The dataset was split into 4 partitions:
 
-The pipeline follows a **lakehouse-style architecture**, separating raw data ingestion from processed analytical outputs.
+| Split      | Size              | Purpose                   |
+|------------|-------------------|---------------------------|
+| Train      | 60% (30,048 rows) | Model training            |
+| Validation | 15% (6,439 rows)  | Hyperparameter tuning     |
+| Test       | 15% (6,440 rows)  | Final offline evaluation  |
+| Deploy     | 10% (4,770 rows)  | Simulates production data |
 
-```
-Kaggle Dataset
-      │
-      ▼
-Azure Data Lake Storage (RAW zone)
-      │
-      ▼
-Azure Data Factory Pipeline
-      │
-      ▼
-Azure Databricks ETL Notebook (Apache Spark)
-      │
-      ▼
-Azure Data Lake Storage (PROCESSED zone)
-      │
-      ▼
-Analytical Outputs
-```
-
-### Technologies Used
-
-| Component | Purpose |
-|------|------|
-| Azure Data Lake Storage Gen2 | Data storage |
-| Azure Data Factory | Pipeline orchestration |
-| Azure Databricks | Distributed data processing |
-| Apache Spark | Data transformation and analytics |
-| GitHub | Version control and documentation |
-
-Using this architecture allows the system to scale to much larger behavioral datasets while keeping the pipeline modular and reproducible.
+All splits are registered as Azure ML Data Assets:
+- `session_train`
+- `session_val`
+- `session_test`
+- `session_deploy`
 
 ---
 
-## Data Lake Structure
+## Model Development
 
-Two storage zones were implemented to separate raw and processed data.
+### Baseline Model — Logistic Regression
+A Logistic Regression model was used as the baseline to establish a performance 
+lower bound.
 
-### Raw Zone
-The raw zone stores the dataset exactly as received from the source.
+### Main Model — Random Forest Classifier
+Random Forest was selected because:
+- It handles non-linear relationships between features
+- It is robust to class imbalance with `class_weight="balanced"`
+- It provides probability estimates for AUC computation
+- It outperformed the baseline on all metrics
 
-```
-raw/
-└── ecommerce-behavior/
-    └── 2019-Oct.csv
-```
+### Hyperparameter Tuning
+An Azure ML Sweep Job was used to tune:
+- `n_estimators`: [50, 100, 200]
+- `max_depth`: [5, 10, 15]
 
-This design ensures the original dataset remains **unchanged and reproducible**, which is important for auditing and reprocessing the pipeline if needed.
-
-### Processed Zone
-The processed zone stores cleaned datasets and analytical outputs generated by the pipeline.
-
-```
-processed/
-└── ecommerce-behavior/
-    ├── clean_events/
-    ├── data_quality_summary/
-    ├── peak_time_metrics/
-    ├── sequential_funnel_metrics/
-    └── processed_2019_oct.csv
-```
-
-Separating raw and processed data is a common data engineering practice that improves **pipeline reliability and data governance**.
-
-### Processed Storage Evidence
-![Processed Storage](processed_storage.png)
+Best configuration found: `n_estimators=100`, `max_depth=15`
 
 ---
 
-## Data Processing Pipeline
+## Results
 
-All transformations were implemented using **PySpark in Azure Databricks**.
+### Model Comparison
+| Metric        | Baseline (LR) | RF Default | RF Best (Sweep) |
+|---------------|---------------|------------|-----------------|
+| Val Accuracy  | 0.394         | 0.664      | 0.799           |
+| Val AUC       | 0.668         | 0.798      | 0.804           |
+| Val F1        | 0.059         | 0.091      | 0.112           |
+| Runtime (s)   | 8.4           | 11.5       | 11.6            |
 
-Apache Spark was selected because the dataset contains **millions of interaction records**, making distributed computation more efficient than single-machine processing.
-
-### Pipeline Steps
-
-1. **Data Ingestion**
-
-The CSV dataset is loaded from the raw storage zone into a Spark DataFrame.
-
-2. **Schema Inference**
-
-Spark automatically determines column data types, allowing structured transformations to be applied.
-
-3. **Feature Engineering**
-
-Two time-based features were derived from the event timestamp:
-
-| Feature | Description |
-|------|------|
-| day_of_week | Extracted weekday from event_time |
-| hour_of_day | Extracted hour from event_time |
-
-These features allow the system to analyze **temporal patterns in user activity**.
+### Best Model — Final Metrics
+| Split      | Accuracy | AUC   | F1    |
+|------------|----------|-------|-------|
+| Train      | 0.810    | 0.910 | 0.164 |
+| Validation | 0.799    | 0.804 | 0.112 |
+| Test       | 0.980    | 0.688 | 0.000 |
 
 ---
 
-## Behavioral Analytics
+## Validation Strategy
+- Train/val/test splits with fixed `random_state=42` for reproducibility
+- Validation set used for hyperparameter tuning — test set never touched during training
+- Metrics logged: Accuracy, AUC, Precision, Recall, F1
+- No data leakage — splits created before any feature processing
 
-### Peak Activity Analysis
-
-User activity was aggregated by **day of week and hour of day** to identify the busiest periods on the platform.
-
-This analysis counts the number of **view events** occurring during each time interval.
-
-Understanding peak activity is valuable for e-commerce platforms because it helps optimize:
-
-- server capacity
-- marketing campaign timing
-- product promotions
-
-### Peak Time Analysis Result
-![Peak Time Analysis](peak_time_analysis.png)
-
-The results show that user activity tends to peak during **afternoon hours (approximately 15-17)** across several weekdays.
+### Known Limitation — Class Imbalance
+The dataset is heavily imbalanced. Most sessions do not result in a purchase. 
+This causes F1 and Precision to be 0 on the test set despite high accuracy. 
+The model predicts the majority class on harder splits. 
+`class_weight="balanced"` was used to partially address this.
 
 ---
 
-### Sequential Funnel Metrics
+## Model Versioning
+Models are registered in the Azure ML Model Registry:
 
-Customer behavior was also analyzed using a **conversion funnel model**:
-
-```
-view → cart → purchase
-```
-
-This model represents the typical steps a user takes before completing a purchase.
-
-By measuring transitions between these stages, the pipeline helps identify **where users drop off in the purchasing process**, which is important for improving conversion rates.
-
-Results are stored in:
-
-```
-processed/ecommerce-behavior/sequential_funnel_metrics/
-```
+| Version | Model                  | Job                        | Notes                   |
+|---------|------------------------|----------------------------|-------------------------|
+| v1      | session-purchase-model | nice_chicken_d5rp2pp390    | Default hyperparameters |
+| v2      | session-purchase-model | helpful_battery_857lhdkx20 | Best sweep config       |
 
 ---
 
-## Data Quality Validation
-
-Before performing analytics, several basic quality checks were implemented to ensure the reliability of the dataset.
-
-These checks include:
-
-- null value inspection
-- schema validation
-- event consistency verification
-- statistical summaries
-
-The results are stored in:
-
-```
-processed/ecommerce-behavior/data_quality_summary/
-```
-
-Performing these checks ensures that downstream analytics are based on **consistent and trustworthy data**.
-
----
-
-## Correlation Analysis
-
-A statistical test was conducted to examine whether product price influences when users interact with products.
-
-```
-Correlation(hour_of_day, price) = 0.0158
-```
-
-The correlation value is extremely small, indicating **almost no relationship** between product price and the time of day when users view products.
-
-This suggests that factors such as **user browsing habits or daily routines** likely play a larger role than price in determining when interactions occur.
+## Repository Structure
+├── azure-pipelines.yml       # Azure DevOps CI pipeline
+├── data/                     # Dataset splits
+│   ├── session_dataset_safe.csv
+│   ├── train.csv
+│   ├── val.csv
+│   ├── test.csv
+│   └── deploy.csv
+├── env/
+│   ├── conda.yml             # Training environment
+│   └── inference_conda.yml   # Deployment environment
+├── jobs/
+│   ├── train_job.yml         # Main training job
+│   ├── baseline_job.yml      # Baseline training job
+│   ├── sweep_job.yml         # Hyperparameter sweep job
+│   └── deployment.yml        # Deployment configuration
+└── src/
+    ├── train.py              # Main training script
+    ├── train_baseline.py     # Baseline training script
+    ├── score.py              # Scoring script for endpoint
+    └── invoke_endpoint.py    # Deployment validation script
 
 ---
 
-## Automated Pipeline Execution
+## Deployment
+The best model (v2) was deployed as an Azure ML Managed Online Endpoint.
 
-The ETL process is executed using a **Databricks Job**, which runs the Spark notebook automatically.
+- Endpoint name: `session-endpoint`
+- Scoring URL: `https://session-endpoint.qatarcentral.inference.ml.azure.com/score`
+- Instance type: `Standard_F2s_v2`
+- Auth mode: key
 
-This allows the pipeline to be **reproducible and scalable**, since the same workflow can process future datasets without manual intervention.
+### Deployment Validation
+The deploy dataset (4,770 rows) was sent to the endpoint using `invoke_endpoint.py`.
 
-### Successful Pipeline Execution
-![Pipeline Run](pipeline_run.png)
+| Metric | Value |
+|---|---|
+| Deployment Accuracy | 0.9797 |
+| Deployment F1 | 0.000 |
+| Total Predictions | 4,770 |
 
----
-
-## Metadata & Data Governance
-
-To improve transparency and reproducibility, a metadata document (`metadata_schema.md`) was created.
-
-This file describes:
-
-- dataset schema
-- column definitions
-- derived features
-- data lineage
-- analytical assumptions
-
-Maintaining metadata helps ensure that the pipeline can be **understood and reused by other data engineers or analysts**.
+Deployment accuracy matches test accuracy, confirming consistency between 
+offline and online predictions. F1 of 0 reflects the class imbalance issue 
+present in both test and deployment splits.
 
 ---
 
-## Version Control
+## DevOps Automation
+Azure DevOps CI pipeline automatically submits the Azure ML training job 
+on every push to the `phase2-modeling-deployment` branch.
 
-All project artifacts are tracked in **GitHub**, including:
+Pipeline: `azure-pipelines.yml`
+Trigger: push to `phase2-modeling-deployment`
+Service Connection: `SC-UDST-CCIT-DSAI3202`
 
-- Databricks ETL notebook
-- metadata documentation
-- project documentation
-
-Version control ensures that the pipeline remains **reproducible, auditable, and collaborative**.
-
----
-
-## Engineering Reflection
-
-While implementing this pipeline, one key takeaway was the importance of separating **data storage, processing, and orchestration layers**. Using Azure Data Lake for storage, Databricks for computation, and Data Factory for orchestration created a modular architecture that is easy to extend or scale.
-
-Even though the dataset used here represents only one month of activity, the same architecture could easily support **larger multi-month behavioral datasets or real-time streaming pipelines** in a production environment.
+Workflow:
+code push → Azure DevOps pipeline → Azure ML training job → MLflow metrics → model artifact
 
 ---
 
-## Key Takeaways
-
-This project demonstrates how cloud-native tools can be used to build a **scalable behavioral analytics pipeline**.
-
-The system:
-
-- ingests raw user interaction data
-- processes it using distributed Spark computation
-- extracts behavioral insights
-- stores structured outputs in a data lake
-
-Such pipelines form the foundation for **customer analytics, recommendation systems, and predictive modeling in modern e-commerce platforms**.
+## Reproducibility
+- Fixed `random_state=42` in all splits and models
+- All dependencies pinned in `env/conda.yml`
+- All datasets versioned as Azure ML Data Assets
+- All models registered in Azure ML Model Registry with job lineage
